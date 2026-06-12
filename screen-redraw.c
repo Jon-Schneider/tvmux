@@ -1598,6 +1598,44 @@ redraw_draw_pane_prompt(struct redraw_draw_ctx *dctx, struct window_pane *wp)
 	screen_free(&screen);
 }
 
+/*
+ * Draw the status column. This is a placeholder painting the reserved columns
+ * in the status style; the formatted contents arrive with the
+ * format_draw_vertical machinery in a later commit. The column is not part of
+ * the scene: like the status line it is drawn directly to the terminal.
+ */
+static void
+redraw_draw_status_column(struct client *c)
+{
+	struct session		*s = c->session;
+	struct tty		*tty = &c->tty;
+	struct grid_cell	 gc;
+	u_int			 i, x, vx, vy, vsx, vsy;
+	u_int			 width = status_column_width(c);
+	int			 fg, bg;
+
+	if (width == 0)
+		return;
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	x = status_column_at(c);
+
+	log_debug("%s: %s at %u width %u", __func__, c->name, x, width);
+
+	style_apply(&gc, s->options, "status-style", NULL);
+	fg = options_get_number(s->options, "status-fg");
+	if (!COLOUR_DEFAULT(fg))
+		gc.fg = fg;
+	bg = options_get_number(s->options, "status-bg");
+	if (!COLOUR_DEFAULT(bg))
+		gc.bg = bg;
+
+	for (i = 0; i < vsy; i++) {
+		tty_cursor(tty, x, vy + i);
+		tty_attributes(tty, &gc, NULL);
+		tty_repeat_space(tty, width);
+	}
+}
+
 /* Draw scene to client. */
 static void
 redraw_draw(struct client *c, struct window_pane *wp, int flags)
@@ -1717,6 +1755,11 @@ redraw_draw(struct client *c, struct window_pane *wp, int flags)
 		sl = c->status.active;
 		for (i = 0; i < lines; i++)
 			tty_draw_line(tty, sl, 0, i, UINT_MAX, 0, y + i, NULL);
+	}
+	if (wp == NULL &&
+	    (flags & (REDRAW_PANE|REDRAW_PANE_BORDER|REDRAW_STATUS))) {
+		log_debug("%s: redrawing status column", c->name);
+		redraw_draw_status_column(c);
 	}
 	if (c->overlay_draw != NULL && (flags & REDRAW_OVERLAY))
 		c->overlay_draw(c, c->overlay_data);
