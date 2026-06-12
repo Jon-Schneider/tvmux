@@ -376,6 +376,17 @@ status_get_range(struct client *c, u_int x, u_int y)
 	return (style_ranges_get_range(&sl->entries[y].ranges, x));
 }
 
+/* Get range at position in the status column. y is the column row. */
+struct style_range *
+status_column_get_range(struct client *c, u_int x, u_int y)
+{
+	struct status_column	*sc = &c->status_column;
+
+	if (y >= sc->nentries)
+		return (NULL);
+	return (style_ranges_get_range(&sc->entries[y].ranges, x));
+}
+
 /* Save old status line. */
 static void
 status_push_screen(struct client *c)
