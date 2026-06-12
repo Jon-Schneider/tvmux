@@ -79,7 +79,7 @@ cmd_display_panes_put(struct cmd_display_panes_ctx *ctx,
 	for (i = 0; i < r->used; i++) {
 		ri = &r->ranges[i];
 		for (j = ri->px; j < ri->px + ri->nx; j++) {
-			tty_cursor(tty, j - ctx->ox, cy);
+			tty_cursor(tty, ctx->vx + j - ctx->ox, cy);
 			tty_putn(tty, &buf[j - ri->px], 1, 1);
 		}
 	}
@@ -116,7 +116,7 @@ cmd_display_panes_draw_format(struct cmd_display_panes_ctx *ctx,
 	for (i = 0; i < r->used; i++) {
 		ri = &r->ranges[i];
 		tty_draw_line(tty, &screen, ri->px - px, 0, ri->nx,
-		    ri->px - ctx->ox, yoff, NULL);
+		    ctx->vx + ri->px - ctx->ox, yoff, NULL);
 	}
 	screen_free(&screen);
 }
