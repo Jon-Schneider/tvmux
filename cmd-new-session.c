@@ -184,7 +184,7 @@ cmd_new_session_exec(struct cmd *self, struct cmdq_item *item)
 	    (~c->flags & CLIENT_CONTROL)) {
 		if (server_client_check_nested(cmdq_get_client(item))) {
 			cmdq_error(item, "sessions should be nested with care, "
-			    "unset $TMUX to force");
+			    "unset $TVMUX to force");
 			goto fail;
 		}
 		if (tcgetattr(c->fd, &tio) != 0)

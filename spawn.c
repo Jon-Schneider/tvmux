@@ -328,7 +328,7 @@ spawn_pane(struct spawn_context *sc, char **cause)
 	child = environ_for_session(s, 0);
 	if (sc->environ != NULL)
 		environ_copy(sc->environ, child);
-	environ_set(child, "TMUX_PANE", 0, "%%%u", new_wp->id);
+	environ_set(child, "TVMUX_PANE", 0, "%%%u", new_wp->id);
 
 	/*
 	 * Then the PATH environment variable. The session one is replaced from

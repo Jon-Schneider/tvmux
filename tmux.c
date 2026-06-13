@@ -206,7 +206,7 @@ make_label(const char *label, char **cause)
 		free(paths[i]);
 	free(paths);
 
-	xasprintf(&base, "%s/tmux-%ld", path, (long)uid);
+	xasprintf(&base, "%s/tvmux-%ld", path, (long)uid);
 	free(path);
 	if (mkdir(base, S_IRWXU) != 0 && errno != EEXIST) {
 		xasprintf(cause, "couldn't create directory %s (%s)", base,
@@ -480,7 +480,7 @@ main(int argc, char **argv)
 	 * terminal, or if not they know that output from UTF-8-capable
 	 * programs may be wrong.
 	 */
-	if (getenv("TMUX") != NULL)
+	if (getenv("TVMUX") != NULL)
 		flags |= CLIENT_UTF8;
 	else {
 		s = getenv("LC_ALL");
@@ -529,11 +529,11 @@ main(int argc, char **argv)
 
 	/*
 	 * If socket is specified on the command-line with -S or -L, it is
-	 * used. Otherwise, $TMUX is checked and if that fails "default" is
+	 * used. Otherwise, $TVMUX is checked and if that fails "default" is
 	 * used.
 	 */
 	if (path == NULL && label == NULL) {
-		s = getenv("TMUX");
+		s = getenv("TVMUX");
 		if (s != NULL && *s != '\0' && *s != ',') {
 			path = xstrdup(s);
 			path[strcspn(path, ",")] = '\0';

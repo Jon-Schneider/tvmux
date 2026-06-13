@@ -278,7 +278,7 @@ environ_for_session(struct session *s, int no_TERM)
 		idx = s->id;
 	else
 		idx = -1;
-	environ_set(env, "TMUX", 0, "%s,%ld,%d", socket_path, (long)getpid(),
+	environ_set(env, "TVMUX", 0, "%s,%ld,%d", socket_path, (long)getpid(),
 	    idx);
 
 	return (env);
