@@ -1,17 +1,18 @@
-# Obvious program stuff.
-bin_PROGRAMS = tmux
+# Obvious program stuff. The binary is tvmux so it can be installed and run
+# alongside a regular tmux during development.
+bin_PROGRAMS = tvmux
 CLEANFILES = tmux.1.mdoc tmux.1.man cmd-parse.c
 
 # Distribution tarball options.
 EXTRA_DIST = \
 	CHANGES README README.ja COPYING example_tmux.conf \
 	osdep-*.c mdoc2man.awk tmux.1
-dist_EXTRA_tmux_SOURCES = compat/*.[ch]
+dist_EXTRA_tvmux_SOURCES = compat/*.[ch]
 
 # Preprocessor flags.
 AM_CPPFLAGS += @XOPEN_DEFINES@ \
 	-DTMUX_VERSION='"@VERSION@"' \
-	-DTMUX_CONF='"$(sysconfdir)/tmux.conf:~/.tmux.conf:$$XDG_CONFIG_HOME/tmux/tmux.conf:~/.config/tmux/tmux.conf"' \
+	-DTMUX_CONF='"$(sysconfdir)/tvmux.conf:~/.tvmux.conf:$$XDG_CONFIG_HOME/tvmux/tvmux.conf:~/.config/tvmux/tvmux.conf"' \
 	-DTMUX_LOCK_CMD='"@DEFAULT_LOCK_CMD@"' \
 	-DTMUX_TERM='"@DEFAULT_TERM@"'
 
@@ -82,7 +83,7 @@ AM_CPPFLAGS += -DTMUX_SOCK_PERM=0
 endif
 
 # List of sources.
-dist_tmux_SOURCES = \
+dist_tvmux_SOURCES = \
 	alerts.c \
 	arguments.c \
 	attributes.c \
@@ -218,26 +219,26 @@ dist_tmux_SOURCES = \
 	window.c \
 	xmalloc.c \
 	xmalloc.h
-nodist_tmux_SOURCES = osdep-@PLATFORM@.c
+nodist_tvmux_SOURCES = osdep-@PLATFORM@.c
 
 # Add compat file for forkpty.
 if NEED_FORKPTY
-nodist_tmux_SOURCES += compat/forkpty-@PLATFORM@.c
+nodist_tvmux_SOURCES += compat/forkpty-@PLATFORM@.c
 endif
 
 # Add compat file for systemd.
 if HAVE_SYSTEMD
-nodist_tmux_SOURCES += compat/systemd.c
+nodist_tvmux_SOURCES += compat/systemd.c
 endif
 
 # Add compat file for utf8proc.
 if HAVE_UTF8PROC
-nodist_tmux_SOURCES += compat/utf8proc.c
+nodist_tvmux_SOURCES += compat/utf8proc.c
 endif
 
 # Enable sixel support.
 if ENABLE_SIXEL
-dist_tmux_SOURCES += image.c image-sixel.c
+dist_tvmux_SOURCES += image.c image-sixel.c
 endif
 
 # Add bits for fuzzing if enabled.
@@ -248,16 +249,16 @@ check_PROGRAMS = \
 	fuzz/format-fuzzer \
 	fuzz/style-fuzzer
 fuzz_input_fuzzer_LDFLAGS = $(FUZZING_LIBS)
-fuzz_input_fuzzer_LDADD = $(LDADD) $(tmux_OBJECTS)
+fuzz_input_fuzzer_LDADD = $(LDADD) $(tvmux_OBJECTS)
 fuzz_cmd_parse_fuzzer_LDFLAGS = $(FUZZING_LIBS)
-fuzz_cmd_parse_fuzzer_LDADD = $(LDADD) $(tmux_OBJECTS)
+fuzz_cmd_parse_fuzzer_LDADD = $(LDADD) $(tvmux_OBJECTS)
 fuzz_format_fuzzer_LDFLAGS = $(FUZZING_LIBS)
-fuzz_format_fuzzer_LDADD = $(LDADD) $(tmux_OBJECTS)
+fuzz_format_fuzzer_LDADD = $(LDADD) $(tvmux_OBJECTS)
 fuzz_style_fuzzer_LDFLAGS = $(FUZZING_LIBS)
-fuzz_style_fuzzer_LDADD = $(LDADD) $(tmux_OBJECTS)
+fuzz_style_fuzzer_LDADD = $(LDADD) $(tvmux_OBJECTS)
 endif
 
-# Install tmux.1 in the right format.
+# Install tmux.1 in the right format (as tvmux.1, next to the tvmux binary).
 install-exec-hook:
 	if test x@MANFORMAT@ = xmdoc; then \
 		sed -e "s|@SYSCONFDIR@|$(sysconfdir)|g" $(srcdir)/tmux.1 \
@@ -268,8 +269,8 @@ install-exec-hook:
 	fi
 	$(mkdir_p) $(DESTDIR)$(mandir)/man1
 	$(INSTALL_DATA) $(srcdir)/tmux.1.@MANFORMAT@ \
-		$(DESTDIR)$(mandir)/man1/tmux.1
+		$(DESTDIR)$(mandir)/man1/tvmux.1
 
 # And uninstall it.
 uninstall-hook:
-	rm -f $(DESTDIR)$(mandir)/man1/tmux.1
+	rm -f $(DESTDIR)$(mandir)/man1/tvmux.1
