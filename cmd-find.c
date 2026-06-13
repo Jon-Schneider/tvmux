@@ -90,7 +90,7 @@ cmd_find_inside_pane(struct client *c)
 			break;
 	}
 	if (wp == NULL) {
-		envent = environ_find(c->environ, "TMUX_PANE");
+		envent = environ_find(c->environ, "TVMUX_PANE");
 		if (envent != NULL)
 			wp = window_pane_find_by_id_str(envent->value);
 	}

@@ -227,7 +227,7 @@ server_client_check_nested(struct client *c)
 	struct environ_entry	*envent;
 	struct window_pane	*wp;
 
-	envent = environ_find(c->environ, "TMUX");
+	envent = environ_find(c->environ, "TVMUX");
 	if (envent == NULL || *envent->value == '\0')
 		return (0);
 

@@ -84,7 +84,7 @@ struct winlink;
 #define TMUX_CONF "/etc/tvmux.conf:~/.tvmux.conf"
 #endif
 #ifndef TMUX_SOCK
-#define TMUX_SOCK "$TMUX_TMPDIR:" _PATH_TMP
+#define TMUX_SOCK "$TVMUX_TMPDIR:" _PATH_TMP
 #endif
 #ifndef TMUX_SOCK_PERM
 #define TMUX_SOCK_PERM (7 /* o+rwx */)

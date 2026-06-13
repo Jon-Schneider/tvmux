@@ -73,7 +73,7 @@ cmd_attach_session(struct cmdq_item *item, const char *tflag, int dflag,
 
 	if (server_client_check_nested(c)) {
 		cmdq_error(item, "sessions should be nested with care, "
-		    "unset $TMUX to force");
+		    "unset $TVMUX to force");
 		return (CMD_RETURN_ERROR);
 	}
 
