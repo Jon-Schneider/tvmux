@@ -2348,19 +2348,28 @@ tty_margin_off(struct tty *tty)
 static void
 tty_margin_pane(struct tty *tty, const struct tty_ctx *ctx)
 {
-	int	l, r;
+	int	l, r, vx = ctx->xoff - ctx->rxoff;
 
+	/*
+	 * l and r are terminal-absolute columns (ctx->xoff includes the left
+	 * status-column reservation vx), so the clamp window must be shifted by
+	 * vx as well: the window viewport occupies terminal columns
+	 * [vx, vx + wsx]. Clamping against the bare wsx left the right margin vx
+	 * columns short, so the rightmost vx columns of a pane were excluded
+	 * from the hardware scroll region and kept stale content (a vertical
+	 * tear) until a full redraw.
+	 */
 	l = ctx->xoff - ctx->wox;
 	r = ctx->xoff + ctx->sx - 1 - ctx->wox;
 
-	if (l < 0)
-		l = 0;
-	if (l > (int)ctx->wsx)
-		l = ctx->wsx;
-	if (r < 0)
-		r = 0;
-	if (r > (int)ctx->wsx)
-		r = ctx->wsx;
+	if (l < vx)
+		l = vx;
+	if (l > vx + (int)ctx->wsx)
+		l = vx + ctx->wsx;
+	if (r < vx)
+		r = vx;
+	if (r > vx + (int)ctx->wsx)
+		r = vx + ctx->wsx;
 
 	tty_margin(tty, l, r);
 }
