@@ -881,7 +881,7 @@ server_client_check_mouse(struct client *c, struct key_event *event)
 	struct window			*w = s->curw->window;
 	struct window_pane		*wp, *lwp = NULL;
 	u_int				 x, y, sx, sy, px, py, n, sl_mpos = 0;
-	u_int				 b, bn;
+	u_int				 b, bn, vx, vy, vsx, vsy;
 	int				 ignore = 0;
 	key_code			 key;
 	struct timeval			 tv;
@@ -986,6 +986,21 @@ have_event:
 			return (KEYC_UNKNOWN);
 	}
 
+	/* Is this on the status column? */
+	m->statuscolat = status_column_at(c);
+	m->statuscolwidth = status_column_width(c);
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	if (loc == KEYC_MOUSE_LOCATION_NOWHERE &&
+	    m->statuscolat != -1 &&
+	    x >= (u_int)m->statuscolat &&
+	    x < m->statuscolat + m->statuscolwidth &&
+	    y >= vy &&
+	    y < vy + vsy) {
+		sr = status_column_get_range(c, x - m->statuscolat, y - vy);
+		if (server_client_resolve_mouse_range(s, m, sr, &loc) != 0)
+			return (KEYC_UNKNOWN);
+	}
+
 	/*
 	 * Not on status line. Adjust position and check for border, pane, or
 	 * scrollbar.
@@ -998,7 +1013,11 @@ have_event:
 				m->w = lwp->window->id;
 			}
 		} else {
-			px = x;
+			status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+			if (x >= vx)
+				px = x - vx;
+			else
+				px = 0;
 			if (m->statusat == 0 && y >= m->statuslines)
 				py = y - m->statuslines;
 			else if (m->statusat > 0 && y >= (u_int)m->statusat)
