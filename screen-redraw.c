@@ -1598,6 +1598,50 @@ redraw_draw_pane_prompt(struct redraw_draw_ctx *dctx, struct window_pane *wp)
 	screen_free(&screen);
 }
 
+/*
+ * Draw the status column. The column screen is rendered separately by
+ * status_column_redraw(); here its rows are copied to the terminal. The
+ * column is not part of the scene: like the status line it is drawn directly
+ * to the terminal.
+ */
+static void
+redraw_draw_status_column(struct client *c)
+{
+	struct session		*sess = c->session;
+	struct tty		*tty = &c->tty;
+	struct screen		*s = &c->status_column.screen;
+	struct grid_cell	 gc;
+	struct format_tree	*ft;
+	u_int			 i, x, vx, vy, vsx, vsy;
+	u_int			 width = status_column_width(c);
+	int			 sep;
+
+	if (width == 0)
+		return;
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	x = status_column_at(c);
+
+	log_debug("%s: %s at %u width %u", __func__, c->name, x, width);
+
+	for (i = 0; i < vsy && i < screen_size_y(s); i++)
+		tty_draw_line(tty, s, 0, i, width, x, vy + i, NULL);
+
+	/* Draw the draggable separator border alongside the content. */
+	sep = status_column_separator_at(c);
+	if (sep == -1)
+		return;
+	memcpy(&gc, &grid_default_cell, sizeof gc);
+	ft = format_create_defaults(NULL, c, sess, sess->curw, NULL);
+	style_add(&gc, sess->options, "status-column-border-style", ft);
+	format_free(ft);
+	gc.attr |= GRID_ATTR_CHARSET;
+	utf8_set(&gc.data, CELL_BORDERS[CELL_TOPBOTTOM]); /* vertical line */
+	for (i = 0; i < vsy; i++) {
+		tty_cursor(tty, sep, vy + i);
+		tty_cell(tty, &gc, NULL);
+	}
+}
+
 /* Draw scene to client. */
 static void
 redraw_draw(struct client *c, struct window_pane *wp, int flags)
@@ -1623,6 +1667,8 @@ redraw_draw(struct client *c, struct window_pane *wp, int flags)
 			redraw = status_prompt_redraw(c);
 		else
 			redraw = status_redraw(c);
+		if (status_column_redraw(c))
+			redraw = 1;
 		if (!redraw && !REDRAW_IS_ALL(flags)) {
 			flags &= ~REDRAW_STATUS;
 			if (flags == 0)
@@ -1717,6 +1763,11 @@ redraw_draw(struct client *c, struct window_pane *wp, int flags)
 		sl = c->status.active;
 		for (i = 0; i < lines; i++)
 			tty_draw_line(tty, sl, 0, i, UINT_MAX, 0, y + i, NULL);
+	}
+	if (wp == NULL &&
+	    (flags & (REDRAW_PANE|REDRAW_PANE_BORDER|REDRAW_STATUS))) {
+		log_debug("%s: redrawing status column", c->name);
+		redraw_draw_status_column(c);
 	}
 	if (c->overlay_draw != NULL && (flags & REDRAW_OVERLAY))
 		c->overlay_draw(c, c->overlay_data);

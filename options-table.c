@@ -241,6 +241,69 @@ static const char *options_table_status_format_default[] = {
 	NULL
 };
 
+/*
+ * Status column format. The same window list skeleton as
+ * OPTIONS_TABLE_STATUS_FORMAT1 but with one window per row: each loop
+ * iteration ends with #[newline] instead of the horizontal separator. The
+ * list left and right markers are drawn as top and bottom markers when the
+ * list is clipped.
+ */
+#define OPTIONS_TABLE_STATUS_COLUMN_FORMAT \
+	"#[list=on align=left]" \
+	"#[list=left-marker]^#[list=right-marker]v#[list=on]" \
+	"#{W:" \
+		"#[range=window|#{window_index} " \
+			"#{E:window-status-style}" \
+			"#{?#{&&:#{window_last_flag}," \
+				"#{!=:#{E:window-status-last-style},default}}, " \
+				"#{E:window-status-last-style}," \
+			"}" \
+			"#{?#{&&:#{window_bell_flag}," \
+				"#{!=:#{E:window-status-bell-style},default}}, " \
+				"#{E:window-status-bell-style}," \
+				"#{?#{&&:#{||:#{window_activity_flag}," \
+					     "#{window_silence_flag}}," \
+					"#{!=:" \
+					"#{E:window-status-activity-style}," \
+					"default}}, " \
+					"#{E:window-status-activity-style}," \
+				"}" \
+			"}" \
+		"]" \
+		"#[push-default]" \
+		"#{T:window-status-format}" \
+		"#[pop-default]" \
+		"#[norange default]" \
+		"#[newline]" \
+	"," \
+		"#[range=window|#{window_index} list=focus " \
+			"#{?#{!=:#{E:window-status-current-style},default}," \
+				"#{E:window-status-current-style}," \
+				"#{E:window-status-style}" \
+			"}" \
+			"#{?#{&&:#{window_last_flag}," \
+				"#{!=:#{E:window-status-last-style},default}}, " \
+				"#{E:window-status-last-style}," \
+			"}" \
+			"#{?#{&&:#{window_bell_flag}," \
+				"#{!=:#{E:window-status-bell-style},default}}, " \
+				"#{E:window-status-bell-style}," \
+				"#{?#{&&:#{||:#{window_activity_flag}," \
+					     "#{window_silence_flag}}," \
+					"#{!=:" \
+					"#{E:window-status-activity-style}," \
+					"default}}, " \
+					"#{E:window-status-activity-style}," \
+				"}" \
+			"}" \
+		"]" \
+		"#[push-default]" \
+		"#{T:window-status-current-format}" \
+		"#[pop-default]" \
+		"#[norange list=on default]" \
+		"#[newline]" \
+	"}"
+
 /* Helpers for hook options. */
 #define OPTIONS_TABLE_HOOK(hook_name, default_value) \
 	{ .name = hook_name, \
@@ -1045,12 +1108,30 @@ const struct options_table_entry options_table[] = {
 		  "Zero disables the status column."
 	},
 
+	{ .name = "status-column-format",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .default_str = OPTIONS_TABLE_STATUS_COLUMN_FORMAT,
+	  .text = "Format for the vertical status column. "
+		  "Rows are separated with the #[newline] directive."
+	},
+
 	{ .name = "status-column-position",
 	  .type = OPTIONS_TABLE_CHOICE,
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .choices = options_table_status_column_position_list,
 	  .default_num = 0,
 	  .text = "Position of the vertical status column."
+	},
+
+	{ .name = "status-column-border-style",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .default_str = "default",
+	  .flags = OPTIONS_TABLE_IS_STYLE,
+	  .separator = ",",
+	  .text = "Style of the vertical status column separator border, which "
+		  "can be dragged with the mouse to resize the column."
 	},
 
 	{ .name = "status-fg",
