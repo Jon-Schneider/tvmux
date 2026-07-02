@@ -1947,7 +1947,7 @@ server_client_prompt_cursor(struct client *c, struct window_pane *wp, int *mode,
 {
 	struct tty		*tty = &c->tty;
 	struct visible_ranges	*r;
-	u_int			 ox, oy, sx, sy;
+	u_int			 ox, oy, sx, sy, vx, vy, vsx, vsy;
 	int			 px, py;
 
 	if (!window_pane_has_prompt(wp))
@@ -1969,8 +1969,9 @@ server_client_prompt_cursor(struct client *c, struct window_pane *wp, int *mode,
 
 	r = window_visible_ranges(wp, *cx, *cy, 1, NULL);
 	if (window_position_is_visible(r, *cx)) {
-		if (status_at_line(c) == 0)
-			*cy += status_line_size(c);
+		status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+		*cx += vx;
+		*cy += vy;
 		*mode |= MODE_CURSOR;
 	}
 	return (1);
@@ -1996,6 +1997,7 @@ server_client_reset_state(struct client *c)
 	int			 mode = 0, cursor, flags, pane_mode = 0;
 	u_int			 cx = 0, cy = 0, ox, oy, sx, sy, prompt = 0;
 	u_int			 sb_w;
+	u_int			 vx, vy, vsx, vsy;
 	struct visible_ranges	*r;
 
 	if (c->flags & (CLIENT_CONTROL|CLIENT_SUSPENDED))
@@ -2061,8 +2063,10 @@ server_client_reset_state(struct client *c)
 						cursor = 0;
 				}
 
-				if (status_at_line(c) == 0)
-					cy += status_line_size(c);
+				status_get_client_viewport(c, &vx, &vy, &vsx,
+				    &vsy);
+				cx += vx;
+				cy += vy;
 			}
 
 			if ((pane_mode & MODE_SYNC) || !cursor)
