@@ -54,6 +54,7 @@ struct cmd_display_panes_ctx {
 	int		 oy;
 	u_int		 sx;
 	u_int		 sy;
+	u_int		 vx;
 	u_int		 statuslines;
 	int		 statustop;
 };
@@ -79,7 +80,7 @@ cmd_display_panes_put(struct cmd_display_panes_ctx *ctx,
 	for (i = 0; i < r->used; i++) {
 		ri = &r->ranges[i];
 		for (j = ri->px; j < ri->px + ri->nx; j++) {
-			tty_cursor(tty, j - ctx->ox, cy);
+			tty_cursor(tty, ctx->vx + j - ctx->ox, cy);
 			tty_putn(tty, &buf[j - ri->px], 1, 1);
 		}
 	}
@@ -116,7 +117,7 @@ cmd_display_panes_draw_format(struct cmd_display_panes_ctx *ctx,
 	for (i = 0; i < r->used; i++) {
 		ri = &r->ranges[i];
 		tty_draw_line(tty, &screen, ri->px - px, 0, ri->nx,
-		    ri->px - ctx->ox, yoff, NULL);
+		    ctx->vx + ri->px - ctx->ox, yoff, NULL);
 	}
 	screen_free(&screen);
 }
@@ -269,13 +270,14 @@ cmd_display_panes_draw(struct client *c, __unused void *data)
 	struct window			*w = s->curw->window;
 	struct window_pane		*wp;
 	struct cmd_display_panes_ctx	 ctx;
-	u_int				 lines;
+	u_int				 lines, vy, vsx, vsy;
 
 	log_debug("%s: %s @%u", __func__, c->name, w->id);
 
 	memset(&ctx, 0, sizeof ctx);
 	ctx.c = c;
 	tty_window_offset(&c->tty, &ctx.ox, &ctx.oy, &ctx.sx, &ctx.sy);
+	status_get_client_viewport(c, &ctx.vx, &vy, &vsx, &vsy);
 	if (options_get_number(s->options, "status-position") == 0) {
 		lines = status_line_size(c);
 		if (c->message_string != NULL || c->prompt != NULL)
