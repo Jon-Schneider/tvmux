@@ -265,16 +265,20 @@ static void
 redraw_get_window_offset(struct client *c, u_int *ox, u_int *oy, u_int *sx,
     u_int *sy)
 {
-	u_int	tty_sx, tty_sy;
+	u_int	vx, vy, vsx, vsy;
 
 	tty_window_offset(&c->tty, ox, oy, sx, sy);
 
-	tty_sx = c->tty.sx;
-	tty_sy = c->tty.sy - status_line_size(c);
-	if (*sx < tty_sx)
-		*sx = tty_sx;
-	if (*sy < tty_sy)
-		*sy = tty_sy;
+	/*
+	 * Expand to cover any area of the viewport outside the window. The
+	 * viewport is the terminal less the status line rows and status column
+	 * columns, so use its size rather than the raw terminal size.
+	 */
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	if (*sx < vsx)
+		*sx = vsx;
+	if (*sy < vsy)
+		*sy = vsy;
 }
 
 /* Initialize the context for building scene. */

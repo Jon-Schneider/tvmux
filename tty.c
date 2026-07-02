@@ -938,8 +938,10 @@ tty_window_bigger(struct tty *tty)
 {
 	struct client	*c = tty->client;
 	struct window	*w = c->session->curw->window;
+	u_int		 vx, vy, vsx, vsy;
 
-	return (tty->sx < w->sx || tty->sy - status_line_size(c) < w->sy);
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	return (vsx < w->sx || vsy < w->sy);
 }
 
 /* What offset should this window be drawn at? */
@@ -961,11 +963,11 @@ tty_window_offset1(struct tty *tty, u_int *ox, u_int *oy, u_int *sx, u_int *sy)
 	struct client		*c = tty->client;
 	struct window		*w = c->session->curw->window;
 	struct window_pane	*wp = server_client_get_pane(c);
-	u_int			 cx, cy, lines;
+	u_int			 cx, cy, vx, vy, vsx, vsy;
 
-	lines = status_line_size(c);
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
 
-	if (tty->sx >= w->sx && tty->sy - lines >= w->sy) {
+	if (vsx >= w->sx && vsy >= w->sy) {
 		*ox = 0;
 		*oy = 0;
 		*sx = w->sx;
@@ -975,8 +977,8 @@ tty_window_offset1(struct tty *tty, u_int *ox, u_int *oy, u_int *sx, u_int *sy)
 		return (0);
 	}
 
-	*sx = tty->sx;
-	*sy = tty->sy - lines;
+	*sx = vsx;
+	*sy = vsy;
 
 	if (c->pan_window == w) {
 		if (*sx >= w->sx)
