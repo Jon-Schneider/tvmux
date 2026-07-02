@@ -53,6 +53,9 @@ static const char *options_table_status_justify_list[] = {
 static const char *options_table_status_position_list[] = {
 	"top", "bottom", NULL
 };
+static const char *options_table_status_column_position_list[] = {
+	"left", "right", NULL
+};
 static const char *options_table_bell_action_list[] = {
 	"none", "any", "current", "other", NULL
 };
@@ -1030,6 +1033,24 @@ const struct options_table_entry options_table[] = {
 	  .default_num = 8,
 	  .text = "Background colour of the status line. This option is "
 		  "deprecated, use 'status-style' instead."
+	},
+
+	{ .name = "status-column",
+	  .type = OPTIONS_TABLE_NUMBER,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .minimum = 0,
+	  .maximum = SHRT_MAX,
+	  .default_num = 0,
+	  .text = "Width of the vertical status column in cells. "
+		  "Zero disables the status column."
+	},
+
+	{ .name = "status-column-position",
+	  .type = OPTIONS_TABLE_CHOICE,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .choices = options_table_status_column_position_list,
+	  .default_num = 0,
+	  .text = "Position of the vertical status column."
 	},
 
 	{ .name = "status-fg",

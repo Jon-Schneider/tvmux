@@ -1569,6 +1569,7 @@ struct session {
 
 	int		 statusat;
 	u_int		 statuslines;
+	u_int		 statuscolumn;
 
 	struct options	*options;
 
@@ -3221,6 +3222,11 @@ void	 status_update_cache(struct session *);
 u_int	 status_prompt_line_at(struct client *);
 int	 status_at_line(struct client *);
 u_int	 status_line_size(struct client *);
+int	 status_column_at(struct client *);
+int	 status_column_separator_at(struct client *);
+u_int	 status_column_width(struct client *);
+void	 status_get_client_viewport(struct client *, u_int *, u_int *,
+	     u_int *, u_int *);
 struct style_range *status_get_range(struct client *, u_int, u_int);
 void	 status_init(struct client *);
 void	 status_free(struct client *);

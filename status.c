@@ -93,6 +93,7 @@ status_update_cache(struct session *s)
 		s->statusat = 0;
 	else
 		s->statusat = 1;
+	s->statuscolumn = options_get_number(s->options, "status-column");
 }
 
 /* Get screen line of status line. -1 means off. */
@@ -119,6 +120,115 @@ status_line_size(struct client *c)
 	if (s == NULL)
 		return (options_get_number(global_s_options, "status"));
 	return (s->statuslines);
+}
+
+/*
+ * Get the first screen column of the status column. -1 means the column is
+ * off (or hidden for this client). Like status_at_line() this is per-client:
+ * the configured width is per-session but visibility depends on the client
+ * terminal size.
+ */
+int
+status_column_at(struct client *c)
+{
+	struct session	*s = c->session;
+	struct options	*oo = (s != NULL) ? s->options : global_s_options;
+	u_int		 width = status_column_width(c);
+
+	if (width == 0)
+		return (-1);
+	if (options_get_number(oo, "status-column-position") == 0)
+		return (0);
+	return (c->tty.sx - width);
+}
+
+/*
+ * Get the screen column of the status column separator (the one-column border
+ * between the column content and the window viewport). -1 means there is no
+ * column (or it is hidden for this client). For a left column the separator
+ * sits just right of the content; for a right column just left of it.
+ */
+int
+status_column_separator_at(struct client *c)
+{
+	struct session	*s = c->session;
+	struct options	*oo = (s != NULL) ? s->options : global_s_options;
+	u_int		 width = status_column_width(c);
+
+	if (width == 0)
+		return (-1);
+	if (options_get_number(oo, "status-column-position") == 0)
+		return (width);
+	return (c->tty.sx - width - 1);
+}
+
+/*
+ * Get the width of the status column for a client. 0 means off or hidden
+ * (when the configured width would leave no window columns, the column is
+ * hidden for this client, like the status line on a one-row terminal).
+ */
+u_int
+status_column_width(struct client *c)
+{
+	struct session	*s = c->session;
+	u_int		 width;
+
+	if (c->flags & (CLIENT_STATUSOFF|CLIENT_CONTROL))
+		return (0);
+	if (s == NULL)
+		width = options_get_number(global_s_options, "status-column");
+	else
+		width = s->statuscolumn;
+	if (width == 0)
+		return (0);
+
+	/*
+	 * Hide the column when its content plus the one-column separator would
+	 * leave no window columns.
+	 */
+	if (width + 1 >= c->tty.sx)
+		return (0);
+	return (width);
+}
+
+/*
+ * Get the rectangle of the terminal visible to the window for a client: the
+ * terminal size less any rows used by the status line and any columns used
+ * by the status column. This is the single choke point for window viewport
+ * arithmetic; all window-geometry call sites should use it rather than
+ * subtracting status sizes themselves.
+ *
+ * This deliberately does not look at message or prompt state: messages and
+ * prompts overlay the status line (or the last terminal line), they do not
+ * resize the window.
+ */
+void
+status_get_client_viewport(struct client *c, u_int *x, u_int *y, u_int *sx,
+    u_int *sy)
+{
+	u_int	width = status_column_width(c), lines = status_line_size(c);
+	u_int	reserved = (width == 0) ? 0 : width + 1; /* +1 separator */
+
+	/*
+	 * The client may not have a session yet (when working out the size for
+	 * a new session); then only the sizes matter, not the offsets.
+	 */
+	if (c->session != NULL && status_column_at(c) == 0)
+		*x = reserved;
+	else
+		*x = 0;
+	if (c->session != NULL && status_at_line(c) == 0)
+		*y = lines;
+	else
+		*y = 0;
+	if (reserved < c->tty.sx)
+		*sx = c->tty.sx - reserved;
+	else
+		*sx = 0;
+	if (lines < c->tty.sy)
+		*sy = c->tty.sy - lines;
+	else
+		*sy = 0;
 }
 
 /* Get the prompt line number for client's session. 1 means at the bottom. */
