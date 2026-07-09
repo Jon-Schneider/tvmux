@@ -93,6 +93,7 @@ status_update_cache(struct session *s)
 		s->statusat = 0;
 	else
 		s->statusat = 1;
+	s->statuscolumn = options_get_number(s->options, "status-column");
 }
 
 /* Get screen line of status line. -1 means off. */
@@ -121,6 +122,115 @@ status_line_size(struct client *c)
 	return (s->statuslines);
 }
 
+/*
+ * Get the first screen column of the status column. -1 means the column is
+ * off (or hidden for this client). Like status_at_line() this is per-client:
+ * the configured width is per-session but visibility depends on the client
+ * terminal size.
+ */
+int
+status_column_at(struct client *c)
+{
+	struct session	*s = c->session;
+	struct options	*oo = (s != NULL) ? s->options : global_s_options;
+	u_int		 width = status_column_width(c);
+
+	if (width == 0)
+		return (-1);
+	if (options_get_number(oo, "status-column-position") == 0)
+		return (0);
+	return (c->tty.sx - width);
+}
+
+/*
+ * Get the screen column of the status column separator (the one-column border
+ * between the column content and the window viewport). -1 means there is no
+ * column (or it is hidden for this client). For a left column the separator
+ * sits just right of the content; for a right column just left of it.
+ */
+int
+status_column_separator_at(struct client *c)
+{
+	struct session	*s = c->session;
+	struct options	*oo = (s != NULL) ? s->options : global_s_options;
+	u_int		 width = status_column_width(c);
+
+	if (width == 0)
+		return (-1);
+	if (options_get_number(oo, "status-column-position") == 0)
+		return (width);
+	return (c->tty.sx - width - 1);
+}
+
+/*
+ * Get the width of the status column for a client. 0 means off or hidden
+ * (when the configured width would leave no window columns, the column is
+ * hidden for this client, like the status line on a one-row terminal).
+ */
+u_int
+status_column_width(struct client *c)
+{
+	struct session	*s = c->session;
+	u_int		 width;
+
+	if (c->flags & (CLIENT_STATUSOFF|CLIENT_CONTROL))
+		return (0);
+	if (s == NULL)
+		width = options_get_number(global_s_options, "status-column");
+	else
+		width = s->statuscolumn;
+	if (width == 0)
+		return (0);
+
+	/*
+	 * Hide the column when its content plus the one-column separator would
+	 * leave no window columns.
+	 */
+	if (width + 1 >= c->tty.sx)
+		return (0);
+	return (width);
+}
+
+/*
+ * Get the rectangle of the terminal visible to the window for a client: the
+ * terminal size less any rows used by the status line and any columns used
+ * by the status column. This is the single choke point for window viewport
+ * arithmetic; all window-geometry call sites should use it rather than
+ * subtracting status sizes themselves.
+ *
+ * This deliberately does not look at message or prompt state: messages and
+ * prompts overlay the status line (or the last terminal line), they do not
+ * resize the window.
+ */
+void
+status_get_client_viewport(struct client *c, u_int *x, u_int *y, u_int *sx,
+    u_int *sy)
+{
+	u_int	width = status_column_width(c), lines = status_line_size(c);
+	u_int	reserved = (width == 0) ? 0 : width + 1; /* +1 separator */
+
+	/*
+	 * The client may not have a session yet (when working out the size for
+	 * a new session); then only the sizes matter, not the offsets.
+	 */
+	if (c->session != NULL && status_column_at(c) == 0)
+		*x = reserved;
+	else
+		*x = 0;
+	if (c->session != NULL && status_at_line(c) == 0)
+		*y = lines;
+	else
+		*y = 0;
+	if (reserved < c->tty.sx)
+		*sx = c->tty.sx - reserved;
+	else
+		*sx = 0;
+	if (lines < c->tty.sy)
+		*sy = c->tty.sy - lines;
+	else
+		*sy = 0;
+}
+
 /* Get the prompt line number for client's session. 1 means at the bottom. */
 u_int
 status_prompt_line_at(struct client *c)
@@ -146,6 +256,40 @@ status_get_range(struct client *c, u_int x, u_int y)
 	if (y >= nitems(sl->entries))
 		return (NULL);
 	return (style_ranges_get_range(&sl->entries[y].ranges, x));
+}
+
+/* Get range at position in the status column. y is the column row. */
+struct style_range *
+status_column_get_range(struct client *c, u_int x, u_int y)
+{
+	struct status_column	*sc = &c->status_column;
+	struct style_ranges	*srs;
+	struct style_range	*sr;
+
+	if (y >= sc->nentries)
+		return (NULL);
+	srs = &sc->entries[y].ranges;
+
+	sr = style_ranges_get_range(srs, x);
+	if (sr != NULL)
+		return (sr);
+
+	/*
+	 * A tab's range only spans its rendered text, so a click on the
+	 * padding beside it misses. Widen the hit area to the whole row only
+	 * when that row is a tab: exactly one range and it is a window range.
+	 * Both conditions matter. Multiple ranges mean no single owner, so
+	 * guessing would dispatch the wrong action. A lone non-window range
+	 * (e.g. a narrow #[range=control] followed by plain text) does not own
+	 * the row either; widening it would fire its action on unrelated
+	 * padding. In both cases padding falls through to the default location.
+	 */
+	sr = TAILQ_FIRST(srs);
+	if (sr != NULL &&
+	    sr == TAILQ_LAST(srs, style_ranges) &&
+	    sr->type == STYLE_RANGE_WINDOW)
+		return (sr);
+	return (NULL);
 }
 
 /* Save old status line. */
@@ -179,6 +323,7 @@ void
 status_init(struct client *c)
 {
 	struct status_line	*sl = &c->status;
+	struct status_column	*sc = &c->status_column;
 	u_int			 i;
 
 	for (i = 0; i < nitems(sl->entries); i++)
@@ -186,6 +331,8 @@ status_init(struct client *c)
 
 	screen_init(&sl->screen, c->tty.sx, 1, 0);
 	sl->active = &sl->screen;
+
+	screen_init(&sc->screen, 1, 1, 0);
 }
 
 /* Free status line. */
@@ -193,6 +340,7 @@ void
 status_free(struct client *c)
 {
 	struct status_line	*sl = &c->status;
+	struct status_column	*sc = &c->status_column;
 	u_int			 i;
 
 	for (i = 0; i < nitems(sl->entries); i++) {
@@ -208,6 +356,14 @@ status_free(struct client *c)
 		free(sl->active);
 	}
 	screen_free(&sl->screen);
+
+	for (i = 0; i < sc->nentries; i++) {
+		style_ranges_free(&sc->entries[i].ranges);
+		free((void *)sc->entries[i].expanded);
+	}
+	free(sc->entries);
+	free(sc->expanded);
+	screen_free(&sc->screen);
 }
 
 /* Draw status line for client. */
@@ -333,6 +489,96 @@ status_message_escape(const char *s)
 	}
 	*p = '\0';
 	return (out);
+}
+
+/* Draw the status column for a client. */
+int
+status_column_redraw(struct client *c)
+{
+	struct status_column	*sc = &c->status_column;
+	struct session		*s = c->session;
+	struct screen_write_ctx	 ctx;
+	struct grid_cell	 gc;
+	u_int			 width = status_column_width(c), i;
+	u_int			 vx, vy, vsx, vsy;
+	int			 flags, force = 0, changed = 0, fg, bg;
+	struct format_tree	*ft;
+	char			*expanded;
+
+	log_debug("%s enter", __func__);
+
+	/* No status column? */
+	if (width == 0)
+		return (0);
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	if (vsy == 0)
+		return (0);
+
+	/* Create format tree. */
+	flags = FORMAT_STATUS;
+	if (c->flags & CLIENT_STATUSFORCE)
+		flags |= FORMAT_FORCE;
+	ft = format_create(c, NULL, FORMAT_NONE, flags);
+	format_defaults(ft, c, NULL, NULL, NULL);
+
+	/* Set up the default colour, as for the status line. */
+	style_apply(&gc, s->options, "status-style", ft);
+	fg = options_get_number(s->options, "status-fg");
+	if (!COLOUR_DEFAULT(fg))
+		gc.fg = fg;
+	bg = options_get_number(s->options, "status-bg");
+	if (!COLOUR_DEFAULT(bg))
+		gc.bg = bg;
+	if (!grid_cells_equal(&gc, &sc->style)) {
+		force = 1;
+		memcpy(&sc->style, &gc, sizeof sc->style);
+	}
+
+	/* Resize the target screen and the row entries. */
+	if (screen_size_x(&sc->screen) != width ||
+	    screen_size_y(&sc->screen) != vsy) {
+		screen_resize(&sc->screen, width, vsy, 0);
+		changed = force = 1;
+	}
+	if (sc->nentries != vsy) {
+		for (i = vsy; i < sc->nentries; i++) {
+			style_ranges_free(&sc->entries[i].ranges);
+			free((void *)sc->entries[i].expanded);
+		}
+		sc->entries = xreallocarray(sc->entries, vsy,
+		    sizeof *sc->entries);
+		for (i = sc->nentries; i < vsy; i++) {
+			memset(&sc->entries[i], 0, sizeof sc->entries[i]);
+			style_ranges_init(&sc->entries[i].ranges);
+		}
+		sc->nentries = vsy;
+	}
+
+	/* Expand the format and short-circuit if unchanged. */
+	expanded = format_expand_time(ft,
+	    options_get_string(s->options, "status-column-format"));
+	format_free(ft);
+	if (!force &&
+	    sc->expanded != NULL &&
+	    strcmp(expanded, sc->expanded) == 0) {
+		free(expanded);
+		log_debug("%s exit: unchanged", __func__);
+		return (changed);
+	}
+	changed = 1;
+
+	/* Draw the rows, rebuilding the per-row ranges. */
+	for (i = 0; i < sc->nentries; i++)
+		style_ranges_free(&sc->entries[i].ranges);
+	screen_write_start(&ctx, &sc->screen);
+	format_draw_vertical(&ctx, &gc, width, vsy, expanded, sc->entries, 0);
+	screen_write_stop(&ctx);
+
+	free(sc->expanded);
+	sc->expanded = expanded;
+
+	log_debug("%s exit: force=%d, changed=%d", __func__, force, changed);
+	return (force || changed);
 }
 
 /* Set a status line message. */

@@ -181,6 +181,7 @@ enum key_code_mouse_location {
 	KEYC_MOUSE_LOCATION_STATUS_RIGHT,
 	KEYC_MOUSE_LOCATION_STATUS_DEFAULT,
 	KEYC_MOUSE_LOCATION_BORDER,
+	KEYC_MOUSE_LOCATION_STATUS_COLUMN_BORDER,
 	KEYC_MOUSE_LOCATION_SCROLLBAR_UP,
 	KEYC_MOUSE_LOCATION_SCROLLBAR_SLIDER,
 	KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN,
@@ -1569,6 +1570,7 @@ struct session {
 
 	int		 statusat;
 	u_int		 statuslines;
+	u_int		 statuscolumn;
 
 	struct options	*options;
 
@@ -1628,6 +1630,9 @@ struct mouse_event {
 
 	int		statusat;
 	u_int		statuslines;
+
+	int		statuscolat;
+	u_int		statuscolwidth;
 
 	u_int		x;
 	u_int		y;
@@ -2017,6 +2022,20 @@ struct status_line {
 	struct style_line_entry entries[STATUS_LINES_LIMIT];
 };
 
+/*
+ * Status column (vertical status line). Unlike the status line this never
+ * hosts message or prompt overlays so there is no active/references
+ * push-pop. One style_line_entry per screen row.
+ */
+struct status_column {
+	struct screen		 screen;
+	char			*expanded;
+
+	struct grid_cell	 style;
+	struct style_line_entry	*entries;
+	u_int			 nentries;
+};
+
 /* File in client. */
 typedef void (*client_file_cb) (struct client *, const char *, int, int,
     struct evbuffer *, void *);
@@ -2202,6 +2221,7 @@ struct client {
 	struct mouse_event	 click_event;
 
 	struct status_line	 status;
+	struct status_column	 status_column;
 	enum client_theme	 theme;
 
 	struct input_requests	 input_requests;
@@ -2647,6 +2667,9 @@ char		*format_grid_line(struct grid *, u_int);
 void		 format_draw(struct screen_write_ctx *,
 		     const struct grid_cell *, u_int, const char *,
 		     struct style_ranges *, int);
+void		 format_draw_vertical(struct screen_write_ctx *,
+		     const struct grid_cell *, u_int, u_int, const char *,
+		     struct style_line_entry *, int);
 u_int		 format_width(const char *);
 char		*format_trim_left(const char *, u_int);
 char		*format_trim_right(const char *, u_int);
@@ -3231,10 +3254,17 @@ void	 status_update_cache(struct session *);
 u_int	 status_prompt_line_at(struct client *);
 int	 status_at_line(struct client *);
 u_int	 status_line_size(struct client *);
+int	 status_column_at(struct client *);
+int	 status_column_separator_at(struct client *);
+u_int	 status_column_width(struct client *);
+void	 status_get_client_viewport(struct client *, u_int *, u_int *,
+	     u_int *, u_int *);
 struct style_range *status_get_range(struct client *, u_int, u_int);
+struct style_range *status_column_get_range(struct client *, u_int, u_int);
 void	 status_init(struct client *);
 void	 status_free(struct client *);
 int	 status_redraw(struct client *);
+int	 status_column_redraw(struct client *);
 void printflike(6, 7) status_message_set(struct client *, int, int, int, int,
 	     const char *, ...);
 void	 status_message_clear(struct client *);

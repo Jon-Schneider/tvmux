@@ -224,6 +224,14 @@ struct redraw_draw_ctx {
 	struct window_pane	*active;
 	struct window_pane	*marked;
 
+	/*
+	 * Left edge of the window viewport on the terminal. This is the
+	 * horizontal analog of status_lines: zero unless a status column is
+	 * reserved on the left, in which case window drawing is shifted right
+	 * by this many columns.
+	 */
+	u_int			 vx;
+
 	u_int			 status_lines;
 	enum pane_lines		 pane_lines;
 	struct grid_cell	 default_gc;
@@ -265,16 +273,20 @@ static void
 redraw_get_window_offset(struct client *c, u_int *ox, u_int *oy, u_int *sx,
     u_int *sy)
 {
-	u_int	tty_sx, tty_sy;
+	u_int	vx, vy, vsx, vsy;
 
 	tty_window_offset(&c->tty, ox, oy, sx, sy);
 
-	tty_sx = c->tty.sx;
-	tty_sy = c->tty.sy - status_line_size(c);
-	if (*sx < tty_sx)
-		*sx = tty_sx;
-	if (*sy < tty_sy)
-		*sy = tty_sy;
+	/*
+	 * Expand to cover any area of the viewport outside the window. The
+	 * viewport is the terminal less the status line rows and status column
+	 * columns, so use its size rather than the raw terminal size.
+	 */
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	if (*sx < vsx)
+		*sx = vsx;
+	if (*sy < vsy)
+		*sy = vsy;
 }
 
 /* Initialize the context for building scene. */
@@ -1073,7 +1085,7 @@ redraw_draw_pane_span(struct redraw_draw_ctx *dctx,
 
 	px = span->data.p.px + (x - span->x);
 	py = span->data.p.py;
-	tty_draw_line(tty, s, px, py, n, x, y, &style_ctx);
+	tty_draw_line(tty, s, px, py, n, dctx->vx + x, y, &style_ctx);
 }
 
 /* Get default border style for spans without a pane. */
@@ -1196,7 +1208,7 @@ redraw_draw_border_span(struct redraw_draw_ctx *dctx,
 
 	if (cell_type == CELL_UD && (dctx->flags & REDRAW_ISOLATES))
 		isolates = 1;
-	tty_cursor(tty, x, y);
+	tty_cursor(tty, dctx->vx + x, y);
 	if (isolates)
 		tty_puts(tty, REDRAW_END_ISOLATE);
 	for (i = 0; i < n; i++)
@@ -1221,7 +1233,7 @@ redraw_draw_status_span(struct redraw_draw_ctx *dctx,
 	if (px < sx) {
 		if (n > sx - px)
 			n = sx - px;
-		tty_draw_line(tty, s, px, 0, n, x, y, NULL);
+		tty_draw_line(tty, s, px, 0, n, dctx->vx + x, y, NULL);
 	}
 }
 
@@ -1281,7 +1293,7 @@ redraw_draw_scrollbar_span(struct redraw_draw_ctx *dctx,
 	sb_pad = sb_style->pad;
 	off = x - span->x;
 
-	tty_cursor(tty, x, y);
+	tty_cursor(tty, dctx->vx + x, y);
 	for (i = 0; i < n; i++) {
 		if (span->data.sb.flags & REDRAW_SCROLLBAR_LEFT) {
 			if (off + i >= sb_w && off + i < sb_w + sb_pad) {
@@ -1315,17 +1327,23 @@ redraw_draw_span(struct redraw_draw_ctx *dctx, struct redraw_span *span,
 	struct tty		*tty = &c->tty;
 	struct visible_ranges	*r;
 	struct visible_range	*rr;
-	u_int			 i, x, n;
+	u_int			 i, x, n, vx = dctx->vx;
 
 	if (type == REDRAW_SPAN_STATUS && ~data->st.wp->flags & PANE_NEWSTATUS)
 		return;
 
-	r = tty_check_overlay_range(tty, span->x, y, span->width);
+	/*
+	 * The overlay check works in terminal coordinates, so shift the span
+	 * by the viewport left edge. The spans drawers receive scene
+	 * coordinates and re-apply vx themselves, so convert the returned
+	 * ranges back.
+	 */
+	r = tty_check_overlay_range(tty, vx + span->x, y, span->width);
 	for (i = 0; i < r->used; i++) {
 		rr = &r->ranges[i];
 		if (rr->nx == 0)
 			continue;
-		x = rr->px;
+		x = rr->px - vx;
 		n = rr->nx;
 
 		switch (span->data.type) {
@@ -1503,7 +1521,7 @@ redraw_set_draw_context(struct redraw_draw_ctx *dctx,
 	struct session	*s = c->session;
 	struct options	*oo = s->options;
 	struct tty	*tty = &c->tty;
-	u_int		 lines;
+	u_int		 lines, vx, vy, vsx, vsy;
 
 	memset(dctx, 0, sizeof *dctx);
 	dctx->scene = scene;
@@ -1516,6 +1534,9 @@ redraw_set_draw_context(struct redraw_draw_ctx *dctx,
 	if (options_get_number(oo, "status-position") == 0)
 		dctx->flags |= REDRAW_STATUS_TOP;
 	dctx->status_lines = lines;
+
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	dctx->vx = vx;
 
 	if ((c->flags & CLIENT_UTF8) && tty_term_has(tty->term, TTYC_BIDI))
 		dctx->flags |= REDRAW_ISOLATES;
@@ -1573,8 +1594,52 @@ redraw_draw_pane_prompt(struct redraw_draw_ctx *dctx, struct window_pane *wp)
 	prompt_draw(wp->prompt, &pdd);
 	screen_write_stop(&ctx);
 
-	tty_draw_line(tty, &screen, 0, offset, width, px, cy, NULL);
+	tty_draw_line(tty, &screen, 0, offset, width, dctx->vx + px, cy, NULL);
 	screen_free(&screen);
+}
+
+/*
+ * Draw the status column. The column screen is rendered separately by
+ * status_column_redraw(); here its rows are copied to the terminal. The
+ * column is not part of the scene: like the status line it is drawn directly
+ * to the terminal.
+ */
+static void
+redraw_draw_status_column(struct client *c)
+{
+	struct session		*sess = c->session;
+	struct tty		*tty = &c->tty;
+	struct screen		*s = &c->status_column.screen;
+	struct grid_cell	 gc;
+	struct format_tree	*ft;
+	u_int			 i, x, vx, vy, vsx, vsy;
+	u_int			 width = status_column_width(c);
+	int			 sep;
+
+	if (width == 0)
+		return;
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	x = status_column_at(c);
+
+	log_debug("%s: %s at %u width %u", __func__, c->name, x, width);
+
+	for (i = 0; i < vsy && i < screen_size_y(s); i++)
+		tty_draw_line(tty, s, 0, i, width, x, vy + i, NULL);
+
+	/* Draw the draggable separator border alongside the content. */
+	sep = status_column_separator_at(c);
+	if (sep == -1)
+		return;
+	memcpy(&gc, &grid_default_cell, sizeof gc);
+	ft = format_create_defaults(NULL, c, sess, sess->curw, NULL);
+	style_add(&gc, sess->options, "status-column-border-style", ft);
+	format_free(ft);
+	gc.attr |= GRID_ATTR_CHARSET;
+	utf8_set(&gc.data, CELL_BORDERS[CELL_TOPBOTTOM]); /* vertical line */
+	for (i = 0; i < vsy; i++) {
+		tty_cursor(tty, sep, vy + i);
+		tty_cell(tty, &gc, NULL);
+	}
 }
 
 /* Draw scene to client. */
@@ -1602,6 +1667,8 @@ redraw_draw(struct client *c, struct window_pane *wp, int flags)
 			redraw = status_prompt_redraw(c);
 		else
 			redraw = status_redraw(c);
+		if (status_column_redraw(c))
+			redraw = 1;
 		if (!redraw && !REDRAW_IS_ALL(flags)) {
 			flags &= ~REDRAW_STATUS;
 			if (flags == 0)
@@ -1696,6 +1763,11 @@ redraw_draw(struct client *c, struct window_pane *wp, int flags)
 		sl = c->status.active;
 		for (i = 0; i < lines; i++)
 			tty_draw_line(tty, sl, 0, i, UINT_MAX, 0, y + i, NULL);
+	}
+	if (wp == NULL &&
+	    (flags & (REDRAW_PANE|REDRAW_PANE_BORDER|REDRAW_STATUS))) {
+		log_debug("%s: redrawing status column", c->name);
+		redraw_draw_status_column(c);
 	}
 	if (c->overlay_draw != NULL && (flags & REDRAW_OVERLAY))
 		c->overlay_draw(c, c->overlay_data);

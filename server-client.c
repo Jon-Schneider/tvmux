@@ -34,6 +34,8 @@ static void	server_client_check_pane_resize(struct window_pane *);
 static void	server_client_check_pane_buffer(struct window_pane *);
 static void	server_client_check_window_resize(struct window *);
 static key_code	server_client_check_mouse(struct client *, struct key_event *);
+static void	server_client_status_column_drag_update(struct client *,
+		    struct mouse_event *);
 static void	server_client_repeat_timer(int, short, void *);
 static void	server_client_click_timer(int, short, void *);
 static void	server_client_check_exit(struct client *);
@@ -655,6 +657,75 @@ server_client_update_scrollbar_hover(struct client *c, int type, int px, int py)
 	}
 }
 
+/*
+ * Resolve a style range under the mouse to a location, filling the mouse
+ * event with the window, pane or session the range refers to. Returns -1
+ * when the event should be ignored.
+ */
+static int
+server_client_resolve_mouse_range(struct session *s, struct mouse_event *m,
+    struct style_range *sr, enum key_code_mouse_location *loc)
+{
+	struct winlink		*fwl;
+	struct window_pane	*fwp;
+	struct session		*fs;
+	u_int			 n;
+
+	if (sr == NULL) {
+		*loc = KEYC_MOUSE_LOCATION_STATUS_DEFAULT;
+		return (0);
+	}
+	switch (sr->type) {
+	case STYLE_RANGE_NONE:
+		return (-1);
+	case STYLE_RANGE_LEFT:
+		log_debug("mouse range: left");
+		*loc = KEYC_MOUSE_LOCATION_STATUS_LEFT;
+		break;
+	case STYLE_RANGE_RIGHT:
+		log_debug("mouse range: right");
+		*loc = KEYC_MOUSE_LOCATION_STATUS_RIGHT;
+		break;
+	case STYLE_RANGE_PANE:
+		fwp = window_pane_find_by_id(sr->argument);
+		if (fwp == NULL)
+			return (-1);
+		m->wp = sr->argument;
+
+		log_debug("mouse range: pane %%%u", m->wp);
+		*loc = KEYC_MOUSE_LOCATION_STATUS;
+		break;
+	case STYLE_RANGE_WINDOW:
+		fwl = winlink_find_by_index(&s->windows, sr->argument);
+		if (fwl == NULL)
+			return (-1);
+		m->w = fwl->window->id;
+
+		log_debug("mouse range: window @%u", m->w);
+		*loc = KEYC_MOUSE_LOCATION_STATUS;
+		break;
+	case STYLE_RANGE_SESSION:
+		fs = session_find_by_id(sr->argument);
+		if (fs == NULL)
+			return (-1);
+		m->s = sr->argument;
+
+		log_debug("mouse range: session $%u", m->s);
+		*loc = KEYC_MOUSE_LOCATION_STATUS;
+		break;
+	case STYLE_RANGE_USER:
+		log_debug("mouse range: user");
+		*loc = KEYC_MOUSE_LOCATION_STATUS;
+		break;
+	case STYLE_RANGE_CONTROL:
+		n = sr->argument; /* parsing keeps this < 10 */
+		log_debug("mouse range: control %u", n);
+		*loc = KEYC_MOUSE_LOCATION_CONTROL0 + n;
+		break;
+	}
+	return (0);
+}
+
 /* Is the mouse inside a pane? */
 static enum key_code_mouse_location
 server_client_check_mouse_in_pane(struct window_pane *wp, int px, int py,
@@ -808,12 +879,11 @@ static key_code
 server_client_check_mouse(struct client *c, struct key_event *event)
 {
 	struct mouse_event		*m = &event->m;
-	struct session			*s = c->session, *fs;
+	struct session			*s = c->session;
 	struct window			*w = s->curw->window;
-	struct winlink			*fwl;
-	struct window_pane		*wp, *fwp, *lwp = NULL;
+	struct window_pane		*wp, *lwp = NULL;
 	u_int				 x, y, sx, sy, px, py, n, sl_mpos = 0;
-	u_int				 b, bn;
+	u_int				 b, bn, vx, vy, vsx, vsy;
 	int				 ignore = 0;
 	key_code			 key;
 	struct timeval			 tv;
@@ -914,59 +984,31 @@ have_event:
 	    y >= (u_int)m->statusat &&
 	    y < m->statusat + m->statuslines) {
 		sr = status_get_range(c, x, y - m->statusat);
-		if (sr == NULL) {
-			loc = KEYC_MOUSE_LOCATION_STATUS_DEFAULT;
-		} else {
-			switch (sr->type) {
-			case STYLE_RANGE_NONE:
-				return (KEYC_UNKNOWN);
-			case STYLE_RANGE_LEFT:
-				log_debug("mouse range: left");
-				loc = KEYC_MOUSE_LOCATION_STATUS_LEFT;
-				break;
-			case STYLE_RANGE_RIGHT:
-				log_debug("mouse range: right");
-				loc = KEYC_MOUSE_LOCATION_STATUS_RIGHT;
-				break;
-			case STYLE_RANGE_PANE:
-				fwp = window_pane_find_by_id(sr->argument);
-				if (fwp == NULL)
-					return (KEYC_UNKNOWN);
-				m->wp = sr->argument;
+		if (server_client_resolve_mouse_range(s, m, sr, &loc) != 0)
+			return (KEYC_UNKNOWN);
+	}
 
-				log_debug("mouse range: pane %%%u", m->wp);
-				loc = KEYC_MOUSE_LOCATION_STATUS;
-				break;
-			case STYLE_RANGE_WINDOW:
-				fwl = winlink_find_by_index(&s->windows,
-				    sr->argument);
-				if (fwl == NULL)
-					return (KEYC_UNKNOWN);
-				m->w = fwl->window->id;
+	/* Is this on the status column? */
+	m->statuscolat = status_column_at(c);
+	m->statuscolwidth = status_column_width(c);
+	status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+	if (loc == KEYC_MOUSE_LOCATION_NOWHERE &&
+	    m->statuscolat != -1 &&
+	    x >= (u_int)m->statuscolat &&
+	    x < m->statuscolat + m->statuscolwidth &&
+	    y >= vy &&
+	    y < vy + vsy) {
+		sr = status_column_get_range(c, x - m->statuscolat, y - vy);
+		if (server_client_resolve_mouse_range(s, m, sr, &loc) != 0)
+			return (KEYC_UNKNOWN);
+	}
 
-				log_debug("mouse range: window @%u", m->w);
-				loc = KEYC_MOUSE_LOCATION_STATUS;
-				break;
-			case STYLE_RANGE_SESSION:
-				fs = session_find_by_id(sr->argument);
-				if (fs == NULL)
-					return (KEYC_UNKNOWN);
-				m->s = sr->argument;
+	/* Is this on the status column separator border? */
+	if (loc == KEYC_MOUSE_LOCATION_NOWHERE) {
+		int	sep = status_column_separator_at(c);
 
-				log_debug("mouse range: session $%u", m->s);
-				loc = KEYC_MOUSE_LOCATION_STATUS;
-				break;
-			case STYLE_RANGE_USER:
-				log_debug("mouse range: user");
-				loc = KEYC_MOUSE_LOCATION_STATUS;
-				break;
-			case STYLE_RANGE_CONTROL:
-				n = sr->argument; /* parsing keeps this < 10 */
-				log_debug("mouse range: control %u", n);
-				loc = KEYC_MOUSE_LOCATION_CONTROL0 + n;
-				break;
-			}
-		}
+		if (sep != -1 && x == (u_int)sep && y >= vy && y < vy + vsy)
+			loc = KEYC_MOUSE_LOCATION_STATUS_COLUMN_BORDER;
 	}
 
 	/*
@@ -981,7 +1023,11 @@ have_event:
 				m->w = lwp->window->id;
 			}
 		} else {
-			px = x;
+			status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+			if (x >= vx)
+				px = x - vx;
+			else
+				px = 0;
 			if (m->statusat == 0 && y >= m->statuslines)
 				py = y - m->statuslines;
 			else if (m->statusat > 0 && y >= (u_int)m->statusat)
@@ -1102,6 +1148,13 @@ have_event:
 		}
 	}
 	if (type == KEYC_TYPE_MOUSEDRAG) {
+		if (loc == KEYC_MOUSE_LOCATION_STATUS_COLUMN_BORDER &&
+		    c->tty.mouse_drag_flag == 0 &&
+		    c->tty.mouse_drag_update == NULL) {
+			c->tty.mouse_drag_update =
+			    server_client_status_column_drag_update;
+			server_client_status_column_drag_update(c, m);
+		}
 		if (c->tty.mouse_drag_update != NULL)
 			key = KEYC_DRAGGING;
 
@@ -1212,6 +1265,50 @@ server_client_update_theme_colours(struct client *c)
 	}
 
 	format_free(ft);
+}
+
+/*
+ * Update the status column width while its separator border is dragged with
+ * the mouse. The new width is written to the session status-column option so
+ * it persists and applies to every client attached to the session, mirroring
+ * how dragging a pane border resizes panes.
+ */
+static void
+server_client_status_column_drag_update(struct client *c, struct mouse_event *m)
+{
+	struct session	*s = c->session;
+	int		 sx = c->tty.sx, width, position;
+
+	if (s == NULL) {
+		c->tty.mouse_drag_update = NULL;
+		return;
+	}
+
+	/*
+	 * Place the separator under the cursor: for a left column the content
+	 * width runs up to the cursor; for a right column it is measured back
+	 * from the right edge (leaving one column for the separator itself).
+	 */
+	position = options_get_number(s->options, "status-column-position");
+	if (position == 0)
+		width = m->x;
+	else
+		width = sx - 1 - (int)m->x;
+
+	/* Keep at least one content column, one separator and one window column. */
+	if (width < 1)
+		width = 1;
+	if (width > sx - 2)
+		width = sx - 2;
+	if (width < 1)
+		return;
+
+	if ((u_int)width == (u_int)options_get_number(s->options,
+	    "status-column"))
+		return;
+
+	options_set_number(s->options, "status-column", width);
+	options_push_changes("status-column");
 }
 
 /* Is this a bracket paste key? */
@@ -1947,7 +2044,7 @@ server_client_prompt_cursor(struct client *c, struct window_pane *wp, int *mode,
 {
 	struct tty		*tty = &c->tty;
 	struct visible_ranges	*r;
-	u_int			 ox, oy, sx, sy;
+	u_int			 ox, oy, sx, sy, vx, vy, vsx, vsy;
 	int			 px, py;
 
 	if (!window_pane_has_prompt(wp))
@@ -1969,8 +2066,9 @@ server_client_prompt_cursor(struct client *c, struct window_pane *wp, int *mode,
 
 	r = window_visible_ranges(wp, *cx, *cy, 1, NULL);
 	if (window_position_is_visible(r, *cx)) {
-		if (status_at_line(c) == 0)
-			*cy += status_line_size(c);
+		status_get_client_viewport(c, &vx, &vy, &vsx, &vsy);
+		*cx += vx;
+		*cy += vy;
 		*mode |= MODE_CURSOR;
 	}
 	return (1);
@@ -1996,6 +2094,7 @@ server_client_reset_state(struct client *c)
 	int			 mode = 0, cursor, flags, pane_mode = 0;
 	u_int			 cx = 0, cy = 0, ox, oy, sx, sy, prompt = 0;
 	u_int			 sb_w;
+	u_int			 vx, vy, vsx, vsy;
 	struct visible_ranges	*r;
 
 	if (c->flags & (CLIENT_CONTROL|CLIENT_SUSPENDED))
@@ -2061,8 +2160,10 @@ server_client_reset_state(struct client *c)
 						cursor = 0;
 				}
 
-				if (status_at_line(c) == 0)
-					cy += status_line_size(c);
+				status_get_client_viewport(c, &vx, &vy, &vsx,
+				    &vsy);
+				cx += vx;
+				cy += vy;
 			}
 
 			if ((pane_mode & MODE_SYNC) || !cursor)

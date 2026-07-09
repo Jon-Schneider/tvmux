@@ -5436,6 +5436,28 @@ gives a status line one row in height;
 or
 .Ic 5
 more rows.
+.It Ic status\-column Ar width
+Set the width in cells of the vertical status column and reserve that many
+columns at one edge of the terminal for it, see the
+.Ic status\-column\-position
+option.
+Zero (the default) disables the status column.
+If the configured width would leave no space for the window, the column is
+temporarily hidden for that client.
+The status column is independent of the status line: either or both may be
+enabled.
+.It Ic status\-column\-format Ar format
+Specify the format to be used for the vertical status column.
+This is a single format where each row is separated with the
+.Ql #[newline]
+directive, see the
+.Sx STYLES
+section.
+The default shows one window per row.
+.It Xo Ic status\-column\-position
+.Op Ic left | right
+.Xc
+Set the position of the vertical status column.
 .It Ic status\-format[] Ar format
 Specify the format to be used for each line of the status line.
 The default builds the top status line from the various individual status
@@ -6452,6 +6474,12 @@ See the
 .Sx STYLES
 section for information on control ranges.
 .Pp
+Mouse events on the status column (see the
+.Ic status\-column
+option) resolve ranges in the same way as the status line and use the same
+.Ql Status
+location suffixes.
+.Pp
 The following mouse events are available:
 .Bl -column "MouseDown1" "MouseDrag1" "WheelDown" -offset indent
 .It Li "WheelUp" Ta "WheelDown" Ta ""
@@ -7092,6 +7120,7 @@ The following variables are available, where appropriate:
 .It Li "mouse_line" Ta "" Ta "Line under mouse, if any"
 .It Li "mouse_sgr_flag" Ta "" Ta "Pane mouse SGR flag"
 .It Li "mouse_standard_flag" Ta "" Ta "Pane mouse standard flag"
+.It Li "mouse_status_column" Ta "" Ta "Status column row on which mouse event took place"
 .It Li "mouse_status_line" Ta "" Ta "Status line on which mouse event took place"
 .It Li "mouse_status_range" Ta "" Ta "Range type or argument of mouse event on status line"
 .It Li "mouse_utf8_flag" Ta "" Ta "Pane mouse UTF\-8 flag"
@@ -7373,6 +7402,21 @@ and
 .Ic list=right\-marker
 mark the text to be used to mark that text has been trimmed from the left or
 right of the list if there is not enough space.
+In the
+.Ic status\-column\-format
+option, the list is trimmed by whole rows and the markers are drawn as top
+and bottom markers on the boundary rows.
+.It Ic newline
+End the current row and start the next in the
+.Ic status\-column\-format
+option.
+This must appear alone in its
+.Ql #[]
+block.
+Consecutive directives produce empty rows; a trailing directive does not add
+an empty final row.
+Styles and ranges in effect continue across the row boundary.
+It is ignored on the horizontal status line.
 .It Ic noattr
 Do not copy attributes from the default style.
 .It Xo Ic push\-default ,
