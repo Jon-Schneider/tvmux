@@ -1635,7 +1635,7 @@ redraw_draw_status_column(struct client *c)
 	style_add(&gc, sess->options, "status-column-border-style", ft);
 	format_free(ft);
 	gc.attr |= GRID_ATTR_CHARSET;
-	utf8_set(&gc.data, CELL_BORDERS[CELL_TOPBOTTOM]); /* vertical line */
+	utf8_set(&gc.data, CELL_BORDERS[CELL_UD]); /* vertical line */
 	for (i = 0; i < vsy; i++) {
 		tty_cursor(tty, sep, vy + i);
 		tty_cell(tty, &gc, NULL);
